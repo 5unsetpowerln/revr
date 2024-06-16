@@ -1,0 +1,11 @@
+/home/ryohz/src/revkitty/client/target/debug/deps/libanstyle_parse-345642556ff6e5f3.rmeta: /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/lib.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/params.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/mod.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/definitions.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/table.rs
+
+/home/ryohz/src/revkitty/client/target/debug/deps/libanstyle_parse-345642556ff6e5f3.rlib: /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/lib.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/params.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/mod.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/definitions.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/table.rs
+
+/home/ryohz/src/revkitty/client/target/debug/deps/anstyle_parse-345642556ff6e5f3.d: /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/lib.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/params.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/mod.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/definitions.rs /home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/table.rs
+
+/home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/lib.rs:
+/home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/params.rs:
+/home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/mod.rs:
+/home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/definitions.rs:
+/home/ryohz/.cargo/registry/src/index.crates.io-6f17d22bba15001f/anstyle-parse-0.2.4/src/state/table.rs:
