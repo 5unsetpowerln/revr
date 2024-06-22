@@ -66,6 +66,7 @@ where
             if len == 0 {
                 break;
             }
+            println!("{:?}", &buffer[..len]);
             w.write_all(&buffer[..len]).unwrap();
             w.flush().unwrap();
         }
