@@ -1,90 +1,71 @@
 use std::{
     io::{BufReader, Read, Write},
-    net::TcpStream,
+    net::{IpAddr, SocketAddr, TcpListener, TcpStream},
+    str::FromStr,
+    sync::Mutex,
 };
 
-use anyhow::{anyhow, bail, Result};
-use clap::Parser;
+use anyhow::{anyhow, bail, Context, Result};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
+use once_cell::sync::Lazy;
 use tokio::{select, sync::watch, task::JoinHandle};
 
-use crate::{
-    command::ArgsParser,
-    revshell::session::{Session, SESSIONS},
-};
+pub static SESSIONS: Lazy<Mutex<Vec<Session>>> = Lazy::new(|| Mutex::new(vec![]));
+static NEXT_ID: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
-#[derive(Parser)]
-struct Args {
-    id: Option<usize>,
+#[derive(Debug)]
+pub struct Session {
+    pub tcp_stream: TcpStream,
+    pub metadata: Metadata,
 }
 
-pub async fn sessions(args: &[&str]) -> Result<()> {
-    let args = Args::parse_args("sessions", args)?;
+#[derive(Debug, Clone)]
+pub struct Metadata {
+    pub remote_addr: SocketAddr,
+    pub id: usize,
+}
 
-    if args.id.is_none() {
-        use prettytable::{row, Table};
+impl Session {
+    fn new(port: u16) -> Result<Self> {
+        let addr = {
+            let ip = IpAddr::from_str("127.0.0.1")?;
+            SocketAddr::new(ip, port)
+        };
 
-        let sessions = super::revshell::session::get_sessions();
-        let mut table = Table::new();
+        let tcp_listener = TcpListener::bind(addr)?;
+        let (tcp_stream, remote_addr) = tcp_listener.accept()?;
 
-        table.add_row(row!["id", "address"]);
-        for session in sessions {
-            table.add_row(row![
-                session.id.to_string(),
-                session.remote_addr.to_string()
-            ]);
-        }
+        let id = {
+            let mut next_id = NEXT_ID.lock().unwrap();
+            let i = *next_id;
+            *next_id += 1;
+            i
+        };
 
-        println!("{}", table);
-        return Ok(());
+        Ok(Self {
+            tcp_stream,
+            metadata: Metadata { remote_addr, id },
+        })
+    }
+}
+
+pub fn create(port: u16) -> Result<()> {
+    let new_session = Session::new(port).context("failed to create session")?;
+
+    {
+        let mut sessions = SESSIONS.lock().unwrap();
+        sessions.push(new_session);
     }
 
-    let id = args.id.unwrap();
-    start(id).await.unwrap();
-
     Ok(())
 }
 
-
-pub async fn start(id: usize) -> Result<()> {
-    let session = {
-        let mut sessions = SESSIONS.lock().unwrap();
-
-        let mut index = None;
-        for (i, s) in sessions.iter().enumerate() {
-            if s.metadata.id == id {
-                index = Some(i);
-            }
-        }
-        if index.is_none() {
-            bail!(anyhow!("session with id {} was not found", id));
-        }
-
-        sessions.remove(index.unwrap())
-    };
-
-    let saved_tcp_stream = session.tcp_stream.try_clone().unwrap();
-    // let mut writer = session.tcp_stream.try_clone().unwrap();
-    let (sender, recver) = watch::channel(());
-
-    let t1 = stdout_stream_pipe(session.tcp_stream.try_clone().unwrap(), recver).await;
-    let t2 = stdin_stream_pipe(session.tcp_stream.try_clone().unwrap(), sender).await;
-    t1.await?;
-    t2.await?;
-    // println!("hello");
-
-    let session = Session {
-        tcp_stream: saved_tcp_stream,
-        metadata: session.metadata,
-    };
-
-    let mut sessions = SESSIONS.lock().unwrap();
-    sessions.push(session);
-
-    Ok(())
+pub fn get_sessions() -> Vec<Metadata> {
+    let sessions = SESSIONS.lock().unwrap();
+    sessions.iter().map(|s| s.metadata.clone()).collect()
 }
 
 pub async fn stdout_stream_pipe(stream: TcpStream, recver: watch::Receiver<()>) -> JoinHandle<()> {
@@ -167,4 +148,42 @@ pub async fn stdin_stream_pipe(
         disable_raw_mode()?;
         Ok("")
     })
+}
+
+pub async fn start(id: usize) -> Result<()> {
+    let session = {
+        let mut sessions = SESSIONS.lock().unwrap();
+
+        let mut index = None;
+        for (i, s) in sessions.iter().enumerate() {
+            if s.metadata.id == id {
+                index = Some(i);
+            }
+        }
+        if index.is_none() {
+            bail!(anyhow!("session with id {} was not found", id));
+        }
+
+        sessions.remove(index.unwrap())
+    };
+
+    let saved_tcp_stream = session.tcp_stream.try_clone().unwrap();
+    // let mut writer = session.tcp_stream.try_clone().unwrap();
+    let (sender, recver) = watch::channel(());
+
+    let t1 = stdout_stream_pipe(session.tcp_stream.try_clone().unwrap(), recver).await;
+    let t2 = stdin_stream_pipe(session.tcp_stream.try_clone().unwrap(), sender).await;
+    t1.await?;
+    t2.await?;
+    // println!("hello");
+
+    let session = Session {
+        tcp_stream: saved_tcp_stream,
+        metadata: session.metadata,
+    };
+
+    let mut sessions = SESSIONS.lock().unwrap();
+    sessions.push(session);
+
+    Ok(())
 }

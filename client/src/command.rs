@@ -2,6 +2,7 @@ use std::{collections::HashMap, process};
 
 use anyhow::{anyhow, bail, Error, Result};
 use clap::Parser;
+use tokio::runtime::Runtime;
 
 pub struct Command {
     pub description: String,
@@ -44,7 +45,10 @@ pub fn get_commands() -> HashMap<&'static str, Command> {
 
     commands.insert(
         "sessions",
-        Command::new("manage reverse shell sessions", super::sessions::sessions),
+        Command::new("manage reverse shell sessions", |args| {
+            let rl = Runtime::new().unwrap();
+            rl.block_on(super::sessions::sessions(args))
+        }),
     );
 
     commands.insert(

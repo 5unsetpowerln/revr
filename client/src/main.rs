@@ -22,8 +22,8 @@ fn setup_logger() {
         .init();
 }
 
-#[tokio::main]
-async fn main() {
+// #[tokio::main]
+fn main() {
     let mut rl = rustyline::DefaultEditor::new().unwrap();
     let commands = command::get_commands();
     setup_logger();
