@@ -1,19 +1,13 @@
 pub mod shell;
 
 use std::{
-    io::{BufReader, Read, Write},
     net::{IpAddr, SocketAddr, TcpListener, TcpStream},
     str::FromStr,
     sync::Mutex,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    terminal::{disable_raw_mode, enable_raw_mode},
-};
+use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
-use tokio::{select, sync::watch, task::JoinHandle};
 
 static SESSIONS: Lazy<Mutex<Vec<Session>>> = Lazy::new(|| Mutex::new(vec![]));
 static NEXT_ID: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));

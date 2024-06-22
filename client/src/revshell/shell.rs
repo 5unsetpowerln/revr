@@ -1,74 +1,21 @@
 use std::{
     io::{BufReader, Read, Write},
-    net::{IpAddr, SocketAddr, TcpListener, TcpStream},
-    str::FromStr,
-    sync::Mutex,
+    net::TcpStream,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use once_cell::sync::Lazy;
 use tokio::{select, sync::watch, task::JoinHandle};
 
-pub static SESSIONS: Lazy<Mutex<Vec<Session>>> = Lazy::new(|| Mutex::new(vec![]));
-static NEXT_ID: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+use super::{Session, SESSIONS};
 
-#[derive(Debug)]
-pub struct Session {
-    pub tcp_stream: TcpStream,
-    pub metadata: Metadata,
-}
-
-#[derive(Debug, Clone)]
-pub struct Metadata {
-    pub remote_addr: SocketAddr,
-    pub id: usize,
-}
-
-impl Session {
-    fn new(port: u16) -> Result<Self> {
-        let addr = {
-            let ip = IpAddr::from_str("127.0.0.1")?;
-            SocketAddr::new(ip, port)
-        };
-
-        let tcp_listener = TcpListener::bind(addr)?;
-        let (tcp_stream, remote_addr) = tcp_listener.accept()?;
-
-        let id = {
-            let mut next_id = NEXT_ID.lock().unwrap();
-            let i = *next_id;
-            *next_id += 1;
-            i
-        };
-
-        Ok(Self {
-            tcp_stream,
-            metadata: Metadata { remote_addr, id },
-        })
-    }
-}
-
-pub fn create(port: u16) -> Result<()> {
-    let new_session = Session::new(port).context("failed to create session")?;
-
-    {
-        let mut sessions = SESSIONS.lock().unwrap();
-        sessions.push(new_session);
-    }
-
-    Ok(())
-}
-
-pub fn get_sessions() -> Vec<Metadata> {
-    let sessions = SESSIONS.lock().unwrap();
-    sessions.iter().map(|s| s.metadata.clone()).collect()
-}
-
-pub async fn stdout_stream_pipe(stream: TcpStream, recver: watch::Receiver<()>) -> JoinHandle<()> {
+pub async fn stdout_stream_pipe(
+    stream: TcpStream,
+    recver: watch::Receiver<()>,
+) -> JoinHandle<Result<ShellMessage>> {
     tokio::spawn(async move {
         let mut buffer = [0; 1024];
         let mut recver = recver;
@@ -85,21 +32,20 @@ pub async fn stdout_stream_pipe(stream: TcpStream, recver: watch::Receiver<()>) 
         loop {
             select! {
                 _ = recver.changed() => {
-                    break
+                    return Ok(ShellMessage::Paused);
                 }
 
                 result = read(&mut reader, &mut buffer) => {
                 match result
                  {
                     Ok(0) => {
-                        break;
+                        return Ok(ShellMessage::Closed)
                     }
                     Ok(n) => {
                         std::io::stdout().write_all(&buffer[..n]).unwrap();
                         std::io::stdout().flush().unwrap();
                     }
-                    Err(e) => {
-                        println!("{}", e);
+                    Err(_e) => {
                         continue;
                     }
                 }}
@@ -111,12 +57,12 @@ pub async fn stdout_stream_pipe(stream: TcpStream, recver: watch::Receiver<()>) 
 pub async fn stdin_stream_pipe(
     stream: TcpStream,
     sender: watch::Sender<()>,
-) -> JoinHandle<Result<&'static str>> {
+) -> JoinHandle<Result<ShellMessage>> {
     tokio::spawn(async move {
         let mut writer = stream;
         enable_raw_mode()?;
 
-        'pipe_loop: loop {
+        loop {
             if event::poll(std::time::Duration::from_millis(500))? {
                 if let Event::Key(KeyEvent {
                     code,
@@ -132,8 +78,9 @@ pub async fn stdin_stream_pipe(
                                 key_sequence.insert(0, 0x1b);
                             }
                             if key_sequence == vec![0x1b, 100] {
+                                disable_raw_mode()?;
                                 sender.send(())?;
-                                break 'pipe_loop;
+                                return Ok(ShellMessage::Paused);
                             }
                             writer.write_all(&key_sequence)?;
                         }
@@ -145,12 +92,10 @@ pub async fn stdin_stream_pipe(
                 }
             }
         }
-        disable_raw_mode()?;
-        Ok("")
     })
 }
 
-pub async fn start(id: usize) -> Result<()> {
+pub async fn start(id: usize) -> Result<ShellMessage> {
     let session = {
         let mut sessions = SESSIONS.lock().unwrap();
 
@@ -168,14 +113,22 @@ pub async fn start(id: usize) -> Result<()> {
     };
 
     let saved_tcp_stream = session.tcp_stream.try_clone().unwrap();
-    // let mut writer = session.tcp_stream.try_clone().unwrap();
     let (sender, recver) = watch::channel(());
 
     let t1 = stdout_stream_pipe(session.tcp_stream.try_clone().unwrap(), recver).await;
     let t2 = stdin_stream_pipe(session.tcp_stream.try_clone().unwrap(), sender).await;
-    t1.await?;
-    t2.await?;
-    // println!("hello");
+    let msg1 = t1.await??;
+    let msg2 = t2.await??;
+
+    match msg1 {
+        ShellMessage::Closed => {
+            return Ok(ShellMessage::Closed);
+        }
+        ShellMessage::Paused => match msg2 {
+            ShellMessage::Closed => return Ok(ShellMessage::Closed),
+            ShellMessage::Paused => (),
+        },
+    }
 
     let session = Session {
         tcp_stream: saved_tcp_stream,
@@ -185,5 +138,10 @@ pub async fn start(id: usize) -> Result<()> {
     let mut sessions = SESSIONS.lock().unwrap();
     sessions.push(session);
 
-    Ok(())
+    Ok(ShellMessage::Paused)
+}
+
+pub enum ShellMessage {
+    Closed,
+    Paused,
 }
