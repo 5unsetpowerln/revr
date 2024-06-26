@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use log::info;
 
-use crate::{command::ArgsParser, revshell};
+use crate::command::ArgsParser;
 
 #[derive(Parser)]
 struct Args {

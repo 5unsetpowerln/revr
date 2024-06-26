@@ -62,6 +62,18 @@ pub async fn stdin_stream_pipe(
         let mut writer = stream;
         enable_raw_mode()?;
 
+        fn send(writer: &mut TcpStream, data: &[u8]) -> Result<()> {
+            let size = data.len().to_le_bytes();
+            let mut header = [0; 11];
+            header[0] = 0xff;
+            header[1] = 0x01;
+            header[2..10].copy_from_slice(&size[..8]);
+            header[10] = 0xff;
+            writer.write_all(&header)?;
+            writer.write_all(data)?;
+            Ok(())
+        }
+
         loop {
             if event::poll(std::time::Duration::from_millis(500))? {
                 if let Event::Key(KeyEvent {
@@ -82,11 +94,11 @@ pub async fn stdin_stream_pipe(
                                 sender.send(())?;
                                 return Ok(ShellMessage::Paused);
                             }
-                            writer.write_all(&key_sequence)?;
+                            send(&mut writer, &key_sequence)?;
                         }
-                        KeyCode::Enter => writer.write_all(b"\n")?,
-                        KeyCode::Backspace => writer.write_all(b"\x08")?,
-                        KeyCode::Esc => writer.write_all(b"\x1b")?,
+                        KeyCode::Enter => send(&mut writer, b"\n")?,
+                        KeyCode::Backspace => send(&mut writer, b"\x08")?,
+                        KeyCode::Esc => send(&mut writer, b"\x1b")?,
                         _ => {}
                     }
                 }

@@ -13,11 +13,11 @@ fn setup_logger() {
 
     env_logger::builder()
         .format(|buf, record| match record.level() {
-            Level::Error => writeln!(buf, "{} {}", color::red("+"), record.args()),
-            Level::Debug => writeln!(buf, "{} {}", color::green("+"), record.args()),
-            Level::Info => writeln!(buf, "{} {}", color::cyan("+"), record.args()),
-            Level::Warn => writeln!(buf, "{} {}", color::yellow("+"), record.args()),
-            Level::Trace => writeln!(buf, "{} {}", color::gray("+"), record.args()),
+            Level::Error => writeln!(buf, " {} {}", color::red("+"), record.args()),
+            Level::Debug => writeln!(buf, " {} {}", color::green("+"), record.args()),
+            Level::Info => writeln!(buf, " {} {}", color::cyan("+"), record.args()),
+            Level::Warn => writeln!(buf, " {} {}", color::yellow("+"), record.args()),
+            Level::Trace => writeln!(buf, " {} {}", color::gray("+"), record.args()),
         })
         .init();
 }
