@@ -8,6 +8,7 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
+use nix::pty::openpty;
 use tokio::{select, sync::watch, task::JoinHandle};
 
 use super::{Session, SESSIONS};
@@ -17,6 +18,7 @@ pub async fn stdout_stream_pipe(
     recver: watch::Receiver<()>,
 ) -> JoinHandle<Result<ShellMessage>> {
     tokio::spawn(async move {
+        enable_raw_mode()?;
         let mut buffer = [0; 1024];
         let mut recver = recver;
         stream
@@ -42,6 +44,7 @@ pub async fn stdout_stream_pipe(
                         return Ok(ShellMessage::Closed)
                     }
                     Ok(n) => {
+                        // println!("{:?}", &buffer[..n]);
                         std::io::stdout().write_all(&buffer[..n]).unwrap();
                         std::io::stdout().flush().unwrap();
                     }
@@ -60,7 +63,7 @@ pub async fn stdin_stream_pipe(
 ) -> JoinHandle<Result<ShellMessage>> {
     tokio::spawn(async move {
         let mut writer = stream;
-        enable_raw_mode()?;
+        // enable_raw_mode()?;
 
         fn send(writer: &mut TcpStream, data: &[u8]) -> Result<()> {
             let size = data.len().to_le_bytes();
@@ -79,8 +82,8 @@ pub async fn stdin_stream_pipe(
                 if let Event::Key(KeyEvent {
                     code,
                     modifiers,
-                    kind,
-                    state,
+                    kind: _kind,
+                    state: _state,
                 }) = event::read()?
                 {
                     match code {
@@ -99,7 +102,13 @@ pub async fn stdin_stream_pipe(
                         KeyCode::Enter => send(&mut writer, b"\n")?,
                         KeyCode::Backspace => send(&mut writer, b"\x08")?,
                         KeyCode::Esc => send(&mut writer, b"\x1b")?,
-                        _ => {}
+                        KeyCode::Right => send(&mut writer, "\u{1b}[C".as_bytes())?,
+                        KeyCode::Left => send(&mut writer, "\u{1b}[D".as_bytes())?,
+                        KeyCode::Up => send(&mut writer, "\u{1b}[A".as_bytes())?,
+                        KeyCode::Down => send(&mut writer, "\u{1b}[B".as_bytes())?,
+                        _ => {
+                            // code
+                        }
                     }
                 }
             }

@@ -1,3 +1,4 @@
+pub mod file_transfer;
 pub mod shell;
 
 use std::{
@@ -27,7 +28,8 @@ pub struct Metadata {
 impl Session {
     fn new(port: u16) -> Result<Self> {
         let addr = {
-            let ip = IpAddr::from_str("127.0.0.1")?;
+            // let ip = IpAddr::from_str("10.10.16.24")?;
+            let ip = IpAddr::from_str("0.0.0.0")?;
             SocketAddr::new(ip, port)
         };
 

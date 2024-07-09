@@ -1,9 +1,10 @@
 mod cli;
 mod command;
 mod listen;
-mod revshell;
+mod session;
 mod sessions;
 
+use clap::Parser;
 use cli::color;
 use log::{error, Level};
 use std::io::Write;
@@ -22,14 +23,26 @@ fn setup_logger() {
         .init();
 }
 
+#[derive(Parser, Debug)]
+struct Args {
+    port: Option<u16>,
+}
+
 // #[tokio::main]
 fn main() {
+    let mut args = Args::parse();
+
     let mut rl = rustyline::DefaultEditor::new().unwrap();
     let commands = command::get_commands();
     setup_logger();
 
     loop {
-        let line = rl.readline(&format!("{} ", color::red("revr>"))).unwrap();
+        let line = if let Some(port) = args.port {
+            args.port = None;
+            format!("listen {}", port)
+        } else {
+            rl.readline(&format!("{} ", color::red("revr>"))).unwrap()
+        };
 
         let parts: Vec<&str> = line.split_whitespace().collect();
         let command_name = match parts.first() {
@@ -40,7 +53,7 @@ fn main() {
 
         if let Some(command) = commands.get(command_name) {
             if let Err(e) = (command.func)(args) {
-                error!("{}", e)
+                error!("{:#?}", e)
             }
         } else {
             error!("unknown command: {}", command_name);

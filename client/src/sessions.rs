@@ -15,7 +15,7 @@ pub async fn sessions(args: &[&str]) -> Result<()> {
     if args.id.is_none() {
         use prettytable::{row, Table};
 
-        let sessions = super::revshell::get_sessions();
+        let sessions = super::session::get_sessions();
         let mut table = Table::new();
 
         table.add_row(row!["id", "address"]);
@@ -31,12 +31,12 @@ pub async fn sessions(args: &[&str]) -> Result<()> {
     }
 
     let id = args.id.unwrap();
-    match super::revshell::shell::start(id).await.unwrap() {
-        super::revshell::shell::ShellMessage::Closed => {
+    match super::session::shell::start(id).await.unwrap() {
+        super::session::shell::ShellMessage::Closed => {
             println!();
             info!("session {} is closed", id);
         }
-        super::revshell::shell::ShellMessage::Paused => {
+        super::session::shell::ShellMessage::Paused => {
             println!();
             info!("session {} is paused", id);
         }
