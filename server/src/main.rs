@@ -149,6 +149,7 @@ where
                     writer.flush().unwrap();
                     data_type = DataType::Header;
                 }
+                DataType::Upload(size) => {}
                 _ => (),
             }
             // let len = reader.read(&mut buffer).unwrap();

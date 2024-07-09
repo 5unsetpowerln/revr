@@ -97,6 +97,10 @@ pub async fn stdin_stream_pipe(
                                 sender.send(())?;
                                 return Ok(ShellMessage::Paused);
                             }
+                            if key_sequence == vec![0x1b, 119] {
+                                send(&mut writer, "\u{17}".as_bytes())?;
+                                continue;
+                            }
                             send(&mut writer, &key_sequence)?;
                         }
                         KeyCode::Enter => send(&mut writer, b"\n")?,
