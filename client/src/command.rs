@@ -56,6 +56,14 @@ pub fn get_commands() -> HashMap<&'static str, Command> {
     );
 
     commands.insert(
+        "back",
+        Command::new("alias for sessions <id>", |args| {
+            let rl = Runtime::new().unwrap();
+            rl.block_on(super::back::back(args))
+        }),
+    );
+
+    commands.insert(
         "upload",
         Command::new("upload a file to remote server", super::upload::upload),
     );
