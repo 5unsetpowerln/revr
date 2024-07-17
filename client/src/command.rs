@@ -18,6 +18,10 @@ impl Command {
     }
 }
 
+struct AppState {
+    session_context: usize,
+}
+
 pub trait ArgsParser<T>: Parser {
     fn parse_args(command: &str, args: &[&str]) -> Result<T>;
 }
@@ -49,6 +53,11 @@ pub fn get_commands() -> HashMap<&'static str, Command> {
             let rl = Runtime::new().unwrap();
             rl.block_on(super::sessions::sessions(args))
         }),
+    );
+
+    commands.insert(
+        "upload",
+        Command::new("upload a file to remote server", super::upload::upload),
     );
 
     commands.insert(
