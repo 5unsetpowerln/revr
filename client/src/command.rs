@@ -1,25 +1,34 @@
-use std::{collections::HashMap, process};
+use std::{collections::HashMap, future::Future};
 
 use anyhow::{anyhow, bail, Error, Result};
 use clap::Parser;
-use tokio::runtime::Runtime;
+use tokio::{runtime::Runtime, select, sync::broadcast::Receiver};
+
+use crate::{
+    cli::{confirm, CONFIRM_PROMPT},
+    LocalState,
+};
 
 pub struct Command {
     pub description: String,
-    pub func: fn(&[&str]) -> Result<(), Error>,
+    pub func:
+        fn(&[&str], &mut LocalState, interrupt_receiver: &mut Receiver<()>) -> Result<(), Error>,
 }
 
 impl Command {
-    pub fn new(description: &str, func: fn(&[&str]) -> Result<(), Error>) -> Self {
+    pub fn new(
+        description: &str,
+        func: fn(
+            &[&str],
+            &mut LocalState,
+            interrupt_receiver: &mut Receiver<()>,
+        ) -> Result<(), Error>,
+    ) -> Self {
         Self {
             description: description.to_string(),
             func,
         }
     }
-}
-
-struct AppState {
-    session_context: usize,
 }
 
 pub trait ArgsParser<T>: Parser {
@@ -38,70 +47,107 @@ where
     }
 }
 
+enum RunningResult<T> {
+    Ok(T),
+    Interrupted,
+}
+
+fn run<F: Future>(future: F, sigint_receiver: &mut Receiver<()>) -> Result<()>
+where
+    F: Future<Output = Result<()>>,
+{
+    async fn run_inner<F: Future>(future: F, sigint_receiver: &mut Receiver<()>) -> Result<()>
+    where
+        F: Future<Output = Result<()>>,
+    {
+        // async fn recv(r: Receiver<()>) {
+        // r.recv().unwrap();
+        // }
+        select! {
+                _ = sigint_receiver.recv() => {
+                    bail!("Interrupted")
+                }
+                result = future => {
+                    return result
+                }
+        }
+    }
+
+    let runtime = Runtime::new().unwrap();
+    runtime.block_on(run_inner(future, sigint_receiver))
+}
+
 pub fn get_commands() -> HashMap<&'static str, Command> {
+    // create_run_function!();
     let mut commands: HashMap<&str, Command> = HashMap::new();
-    commands.insert("exit", Command::new("exit revr", |_| process::exit(0)));
+    commands.insert(
+        "exit",
+        Command::new("exit revr", |_, local_state, _| {
+            if confirm(CONFIRM_PROMPT) {
+                local_state.is_exited = true;
+                Ok(())
+            } else {
+                Ok(())
+            }
+        }),
+    );
 
     commands.insert(
         "listen",
-        Command::new("start waiting for reverse shell", super::listen::listen),
+        Command::new(
+            "start waiting for reverse shell",
+            |args, local_state, sigint_receiver| {
+                run(super::listen::listen(args, local_state), sigint_receiver)
+            },
+        ),
     );
 
     commands.insert(
         "sessions",
-        Command::new("manage reverse shell sessions", |args| {
-            let rl = Runtime::new().unwrap();
-            rl.block_on(super::sessions::sessions(args))
-        }),
+        Command::new(
+            "manage reverse shell sessions",
+            |args, app_state, sigint_receiver| {
+                run(super::sessions::sessions(args, app_state), sigint_receiver)
+            },
+        ),
     );
 
     commands.insert(
         "back",
-        Command::new("alias for sessions <id>", |args| {
-            let rl = Runtime::new().unwrap();
-            rl.block_on(super::back::back(args))
-        }),
+        Command::new(
+            "alias for sessions <id>",
+            |args, local_state, sigint_receiver| {
+                run(super::back::back(args, local_state), sigint_receiver)
+            },
+        ),
     );
 
     commands.insert(
         "upload",
-        Command::new("upload a file to remote server", super::upload::upload),
+        Command::new(
+            "upload a file to remote server",
+            |args, local_state, sigint_receiver| {
+                run(super::upload::upload(args, local_state), sigint_receiver)
+            },
+        ),
     );
 
     commands.insert(
         "help",
-        Command::new("show help", |args| {
+        Command::new("show help", |_, local_state, _| {
             let commands = get_commands();
-            let command_name = args.first();
 
-            if command_name.is_none() {
-                let name_max_length = commands.keys().map(|&name| name.len()).max().unwrap_or(0);
+            let name_max_length = commands.keys().map(|&name| name.len()).max().unwrap_or(0);
 
-                for (name, command) in commands {
-                    println!(
-                        "{:<width$}\t{}",
-                        name,
-                        command.description,
-                        width = name_max_length
-                    );
-                }
-                return Ok(());
+            for (name, command) in commands {
+                println!(
+                    "{:<width$}\t{}",
+                    name,
+                    command.description,
+                    width = name_max_length
+                );
             }
-
-            let command_name = command_name.unwrap();
-            let command = commands.get(command_name);
-            if command.is_none() {
-                bail!(anyhow!("unknown command: {}", command_name));
-            }
-
-            let command = command.unwrap();
-            let command_args = if let Some(a) = args.get(1..) {
-                a
-            } else {
-                &[""]
-            };
-            let _ = (command.func)(command_args);
-            Ok(())
+            return Ok(());
         }),
     );
 

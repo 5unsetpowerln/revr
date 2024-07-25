@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
+use std::sync::mpsc::Receiver;
 use std::{
     io::{self, BufReader, Read, Write},
     net::TcpStream,
@@ -11,12 +12,11 @@ use tokio::{select, sync::watch, task::JoinHandle};
 
 use super::{Session, SESSIONS};
 
-pub async fn stdout_stream_pipe(
+async fn stdout_stream_pipe(
     stream: TcpStream,
     recver: watch::Receiver<()>,
 ) -> JoinHandle<Result<ShellMessage>> {
     tokio::spawn(async move {
-        // enable_raw_mode()?;
         let mut buffer = [0; 1024];
         let mut recver = recver;
         stream
@@ -55,9 +55,7 @@ pub async fn stdout_stream_pipe(
     })
 }
 
-// fn stdin_event_loop() {}
-
-pub async fn stdin_stream_pipe(
+async fn stdin_stream_pipe(
     stream: TcpStream,
     sender: watch::Sender<()>,
 ) -> JoinHandle<Result<ShellMessage>> {

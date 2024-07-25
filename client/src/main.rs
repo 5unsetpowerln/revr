@@ -7,10 +7,16 @@ mod session;
 mod sessions;
 mod upload;
 
+use chan::chan_select;
 use clap::Parser;
-use cli::color;
+use cli::{color, confirm, CONFIRM_PROMPT, PROMPT};
 use log::{error, Level};
-use std::io::Write;
+use rustyline::error::ReadlineError;
+use std::{
+    io::Write,
+    sync::mpsc::{self, Receiver},
+};
+use tokio::{select, sync::broadcast};
 
 fn setup_logger() {
     std::env::set_var("RUST_LOG", "info");
@@ -31,19 +37,52 @@ struct Args {
     port: Option<u16>,
 }
 
-// #[tokio::main]
+pub struct LocalState {
+    session_ctx: Option<usize>,
+    is_exited: bool,
+}
+
+impl LocalState {
+    pub fn new() -> Self {
+        Self {
+            session_ctx: None,
+            is_exited: false,
+        }
+    }
+}
+
 fn main() {
     let mut args = Args::parse();
     let mut rl = rustyline::DefaultEditor::new().unwrap();
     let commands = command::get_commands();
+    let mut local_state = LocalState::new();
     setup_logger();
+    let (sigint_sender, _sigint_receiver) = broadcast::channel(10);
+    let sigint_sender_clone = sigint_sender.clone();
+    ctrlc::set_handler(move || {
+        sigint_sender_clone.send(()).unwrap();
+    })
+    .unwrap();
 
-    loop {
+    'local_loop: loop {
+        if local_state.is_exited {
+            break;
+        }
         let line = if let Some(port) = args.port {
             args.port = None;
             format!("listen {}", port)
         } else {
-            rl.readline(&format!("{} ", color::red("revr>"))).unwrap()
+            match rl.readline(&color::red(&PROMPT)) {
+                Ok(line) => line,
+                Err(ReadlineError::Eof) => {
+                    if confirm(&CONFIRM_PROMPT) {
+                        break;
+                    } else {
+                        continue;
+                    }
+                }
+                _ => continue 'local_loop,
+            }
         };
 
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -54,8 +93,7 @@ fn main() {
         let args = parts.get(1..).unwrap_or(&[]);
 
         if let Some(command) = commands.get(command_name) {
-            if let Err(e) = (command.func)(args) {
-                // error!("{:#?}", e)
+            if let Err(e) = (command.func)(args, &mut local_state, &mut sigint_sender.subscribe()) {
                 error!("{}", e)
             }
         } else {
