@@ -1,7 +1,8 @@
-use once_cell::sync::Lazy;
-
+pub mod ascii;
 pub mod color;
 pub mod error;
+
+use once_cell::sync::Lazy;
 
 pub static PROMPT: Lazy<String> = Lazy::new(|| color::red("revr> "));
 pub static CONFIRM_PROMPT: &str = "exit? (y/n)";

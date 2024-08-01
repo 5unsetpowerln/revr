@@ -7,7 +7,7 @@ mod session;
 mod sessions;
 mod upload;
 
-use chan::chan_select;
+// use chan::chan_select;
 use clap::Parser;
 use cli::{color, confirm, CONFIRM_PROMPT, PROMPT};
 use log::{error, Level};

@@ -1,7 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
-use std::sync::mpsc::Receiver;
 use std::{
     io::{self, BufReader, Read, Write},
     net::TcpStream,
@@ -9,6 +8,9 @@ use std::{
 };
 use termion::raw::IntoRawMode;
 use tokio::{select, sync::watch, task::JoinHandle};
+
+use crate::cli;
+use crate::cli::ascii::char_to_ctrl;
 
 use super::{Session, SESSIONS};
 
@@ -42,7 +44,6 @@ async fn stdout_stream_pipe(
                         return Ok(ShellMessage::Closed)
                     }
                     Ok(n) => {
-                        // println!("{:?}", &buffer[..n]);
                         std::io::stdout().write_all(&buffer[..n]).unwrap();
                         std::io::stdout().flush().unwrap();
                     }
@@ -79,8 +80,6 @@ async fn stdin_stream_pipe(
             )
             .unwrap();
 
-        let mut buffer = [0; 1];
-
         fn send(writer: &mut TcpStream, data: &[u8]) -> Result<()> {
             let size = data.len().to_le_bytes();
             let mut header = [0; 11];
@@ -93,6 +92,13 @@ async fn stdin_stream_pipe(
             Ok(())
         }
 
+        let mut received_byte = [0; 1];
+        let mut buffer = Vec::new();
+        let exit_ctrl_char = char_to_ctrl(b'D')?;
+        let example_keybind_to_switch_buffering = char_to_ctrl(b'I')?;
+        // let example_keybind_to_stop_buffering_input = char_to_ctrl(b'I')?;
+        let mut is_buffering = false;
+
         loop {
             // waiting for event
             poll.poll(&mut events, None).unwrap();
@@ -100,17 +106,31 @@ async fn stdin_stream_pipe(
             for event in &events {
                 if event.token() == Token(0) && event.is_readable() {
                     // stdinからバイトを読み取る
-                    match stdin.read(&mut buffer) {
-                        Ok(1) => match buffer[0] {
-                            4 => {
-                                sender.send(())?;
-                                return Ok(ShellMessage::Paused);
+                    match stdin.read(&mut received_byte) {
+                        Ok(1) => {
+                            {
+                                if received_byte[0] == exit_ctrl_char {
+                                    sender.send(())?;
+                                    return Ok(ShellMessage::Paused);
+                                }
+                                if received_byte[0] == example_keybind_to_switch_buffering {
+                                    is_buffering = !is_buffering;
+                                }
                             }
-                            _ => {
-                                send(&mut writer, &buffer)?;
+
+                            // println!("{}", is_buffering);
+                            if is_buffering && received_byte[0] != b'\r' {
+                                if received_byte[0] != example_keybind_to_switch_buffering {
+                                    buffer.push(received_byte[0]);
+                                }
                                 continue;
+                            } else if received_byte[0] != example_keybind_to_switch_buffering {
+                                buffer.push(received_byte[0]);
                             }
-                        },
+
+                            send(&mut writer, &buffer)?;
+                            buffer.clear();
+                        }
                         Ok(_) => {
                             panic!("recieved EOF from stdin")
                         }

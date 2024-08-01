@@ -1,2 +1,4 @@
 0xff 0x01 <length> 0xff: shell
 0xff 0x02 <length> 0xff: upload
+
+47, 104, 111, 109, 101, 32, 35, 32, 27, 91, 54, 110

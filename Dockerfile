@@ -1,4 +1,4 @@
-FROM alpine:latest
-# FROM ubuntu:latest
+# FROM alpine:latest
+FROM ubuntu:latest
 
-COPY ./revr/revr ./revr
+COPY ./server/revr-server ./revr-server
