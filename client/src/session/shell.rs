@@ -1,6 +1,9 @@
 use anyhow::{anyhow, bail, Result};
+use log::info;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
+use std::thread;
+use std::time::Duration;
 use std::{
     io::{self, BufReader, Read, Write},
     net::TcpStream,
@@ -16,11 +19,11 @@ use super::{Session, SESSIONS};
 
 async fn stdout_stream_pipe(
     stream: TcpStream,
-    recver: watch::Receiver<()>,
+    pause_recver: watch::Receiver<()>,
 ) -> JoinHandle<Result<ShellMessage>> {
     tokio::spawn(async move {
         let mut buffer = [0; 1024];
-        let mut recver = recver;
+        let mut pause_recver = pause_recver;
         stream
             .set_read_timeout(Some(std::time::Duration::from_secs(1)))
             .unwrap();
@@ -33,7 +36,7 @@ async fn stdout_stream_pipe(
 
         loop {
             select! {
-                _ = recver.changed() => {
+                _ = pause_recver.changed() => {
                     return Ok(ShellMessage::Paused);
                 }
 
@@ -58,14 +61,16 @@ async fn stdout_stream_pipe(
 
 async fn stdin_stream_pipe(
     stream: TcpStream,
-    sender: watch::Sender<()>,
+    pause_sender: watch::Sender<()>,
 ) -> JoinHandle<Result<ShellMessage>> {
     tokio::spawn(async move {
         let mut writer = stream;
 
-        let _stdout = io::stdout().into_raw_mode().unwrap();
+        let mut stdout = io::stdout().into_raw_mode().unwrap();
         let mut stdin = io::stdin().lock();
-        let fd = stdin.as_raw_fd();
+        // let mut stdin = io::stdin();
+        // let fd = stdin.as_raw_fd();
+        let fd = io::stdin().as_raw_fd();
 
         // making poll of mio
         let mut poll = Poll::new().unwrap();
@@ -92,8 +97,9 @@ async fn stdin_stream_pipe(
             Ok(())
         }
 
-        let mut received_byte = [0; 1];
-        let mut buffer = Vec::new();
+        let mut received_bytes = [0; 1];
+        let mut local_buffer = Vec::new();
+
         let exit_ctrl_char = char_to_ctrl(b'D')?;
         let example_keybind_to_switch_buffering = char_to_ctrl(b'I')?;
         // let example_keybind_to_stop_buffering_input = char_to_ctrl(b'I')?;
@@ -106,30 +112,78 @@ async fn stdin_stream_pipe(
             for event in &events {
                 if event.token() == Token(0) && event.is_readable() {
                     // stdinからバイトを読み取る
-                    match stdin.read(&mut received_byte) {
+                    match stdin.read(&mut received_bytes) {
                         Ok(1) => {
-                            {
-                                if received_byte[0] == exit_ctrl_char {
-                                    sender.send(())?;
-                                    return Ok(ShellMessage::Paused);
-                                }
-                                if received_byte[0] == example_keybind_to_switch_buffering {
-                                    is_buffering = !is_buffering;
+                            let received_byte = received_bytes[0];
+
+                            if received_byte == exit_ctrl_char {
+                                pause_sender.send(())?;
+                                return Ok(ShellMessage::Paused);
+                            }
+
+                            if received_byte == example_keybind_to_switch_buffering {
+                                is_buffering = !is_buffering;
+
+                                if is_buffering {
+                                    continue;
+                                } else {
+                                    let local_buffer_len = local_buffer.len();
+
+                                    if local_buffer_len > 0 {
+                                        let reset_cursor = format!("\x1b[{}D", local_buffer_len);
+                                        stdout.write_all(reset_cursor.as_bytes())?;
+                                        // let spaces = format!("{}", " ".repeat(local_buffer_len));
+                                        // stdout.write_all(spaces.as_bytes())?;
+                                        // stdout.write_all(reset_cursor.as_bytes())?;
+                                        stdout.flush()?;
+                                    }
+
+                                    send(&mut writer, &local_buffer)?;
+                                    local_buffer.clear();
+                                    continue;
                                 }
                             }
 
-                            // println!("{}", is_buffering);
-                            if is_buffering && received_byte[0] != b'\r' {
-                                if received_byte[0] != example_keybind_to_switch_buffering {
-                                    buffer.push(received_byte[0]);
-                                }
-                                continue;
-                            } else if received_byte[0] != example_keybind_to_switch_buffering {
-                                buffer.push(received_byte[0]);
-                            }
+                            if is_buffering {
+                                if received_byte == b'\r' || received_byte < 0x20 {
+                                    let local_buffer_len = local_buffer.len();
 
-                            send(&mut writer, &buffer)?;
-                            buffer.clear();
+                                    if local_buffer_len > 0 {
+                                        let reset_cursor = format!("\x1b[{}D", local_buffer_len);
+                                        stdout.write_all(reset_cursor.as_bytes())?;
+                                        // let spaces = format!("{}", " ".repeat(local_buffer_len));
+                                        // stdout.write_all(spaces.as_bytes())?;
+                                        // stdout.write_all(reset_cursor.as_bytes())?;
+                                        stdout.flush()?;
+                                    }
+
+                                    local_buffer.push(received_byte);
+                                    send(&mut writer, &local_buffer)?;
+                                    local_buffer.clear();
+                                    continue;
+                                } else if received_byte == 127 {
+                                    // backspace(DEL)
+                                    let local_buffer_len = local_buffer.len();
+
+                                    if local_buffer_len > 0 {
+                                        stdout.write_all("\u{1b}[1D".as_bytes())?;
+                                        stdout.write_all(b" ")?;
+                                        stdout.write_all("\u{1b}[1D".as_bytes())?;
+                                        stdout.flush()?;
+                                        local_buffer.remove(local_buffer_len - 1);
+                                    }
+                                } else {
+                                    // buffering
+                                    local_buffer.push(received_byte);
+                                    let display_char =
+                                        cli::color::blue(&String::from_utf8(vec![received_byte])?);
+                                    stdout.write_all(display_char.as_bytes())?;
+                                    stdout.flush()?;
+                                    continue;
+                                }
+                            } else {
+                                send(&mut writer, &[received_byte])?;
+                            }
                         }
                         Ok(_) => {
                             panic!("recieved EOF from stdin")
@@ -164,10 +218,10 @@ pub async fn start(id: usize) -> Result<ShellMessage> {
     };
 
     let saved_tcp_stream = session.tcp_stream.try_clone().unwrap();
-    let (sender, recver) = watch::channel(());
+    let (pause_sender, pause_recver) = watch::channel(());
 
-    let t1 = stdout_stream_pipe(session.tcp_stream.try_clone().unwrap(), recver).await;
-    let t2 = stdin_stream_pipe(session.tcp_stream.try_clone().unwrap(), sender).await;
+    let t1 = stdout_stream_pipe(session.tcp_stream.try_clone().unwrap(), pause_recver).await;
+    let t2 = stdin_stream_pipe(session.tcp_stream.try_clone().unwrap(), pause_sender).await;
     let msg1 = t1.await??;
     let msg2 = t2.await??;
 
