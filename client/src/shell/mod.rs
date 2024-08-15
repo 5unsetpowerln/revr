@@ -1,7 +1,9 @@
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
+use colored::Colorize;
 use lazy_static::lazy_static;
-use log::debug;
+// use log::debug;
 
 use crate::errors::*;
 
@@ -22,10 +24,12 @@ use crate::cmd::*;
 // use crate::workspaces::Workspace;
 // use colored::Colorize;
 // use lazy_static::lazy_static;
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::Condvar;
+use std::sync::Mutex;
 
 // pub mod complete;
 // use self::complete::CmdCompleter;
@@ -114,7 +118,7 @@ pub struct Shell {
     // keyring: KeyRing,
     // autonoscope: RuleSet,
     // options: Option<HashMap<String, String>>,
-    signal_register: Arc<SignalRegister>,
+    signal_register_pair: SignalRegisterPair,
     // cancel_twice: u8,
 }
 
@@ -131,7 +135,7 @@ impl Shell {
         let rl = Readline::new()?;
 
         // let prompt = Prompt::new(db.name().to_string());
-        let prompt = String::from_str("revr> ").unwrap();
+        let prompt = String::from_str("revr> ").unwrap().red().to_string();
 
         let mut rl = Shell {
             rl,
@@ -143,7 +147,7 @@ impl Shell {
             // library,
             // keyring,
             // options: None,
-            signal_register: Arc::new(SignalRegister::new()),
+            signal_register_pair: Arc::new((Mutex::new(SignalRegister::new()), Condvar::new())),
             // cancel_twice: 0,
         };
 
@@ -268,7 +272,7 @@ impl Shell {
                 if line.is_empty() {
                     None
                 } else {
-                    debug!("readline returned {:?}", line);
+                    // debug!("readline returned {:?}", line);
 
                     // self.rl.add_history_entry(line.as_str());
 
@@ -287,7 +291,7 @@ impl Shell {
                             return None;
                         }
                     };
-                    debug!("shellwords returned {:?}", cmd);
+                    // debug!("shellwords returned {:?}", cmd);
 
                     if cmd.is_empty() {
                         return None;
@@ -303,25 +307,40 @@ impl Shell {
                 }
             }
             Err(ReadlineError::Interrupted) => {
-                todo!()
+                // todo!()
                 // ^C
                 // self.cancel_twice += 1;
 
                 // if self.cancel_twice > 1 {
-                // Some((Command::Interrupt, vec![]))
+                Some((Command::Interrupt, vec![]))
                 // } else {
                 // None
                 // }
             }
             Err(ReadlineError::Eof) => {
-                todo!()
                 // ^D
-                // Some((Command::Eof, vec![]))
+                Some((Command::Exit, vec![]))
             }
             Err(err) => {
                 println!("Error: {:?}", err);
                 Some((Command::Interrupt, vec![]))
             }
+        }
+    }
+
+    pub fn exit_confirm(&mut self) -> Result<bool> {
+        let confirm = match self.rl.readline("(y/n): ") {
+            Ok(line) => line,
+            Err(err) => match err {
+                rustyline::error::ReadlineError::Eof => return self.exit_confirm(),
+                _ => return Err(err).context("Failed to readline"),
+            },
+        };
+        let confirm_without_whitespace = confirm.trim();
+        if confirm_without_whitespace == "y" {
+            Ok(true)
+        } else {
+            Ok(false)
         }
     }
 
@@ -372,7 +391,8 @@ impl Shell {
     // }
 
     pub fn set_signal_handler(&self) -> Result<()> {
-        let ctr = self.signal_register.clone();
+        // let pair = self.signal_register_pair;
+        let signal_register_pair = self.signal_register_pair.clone();
         ctrlc::set_handler(move || {
             // it seems this handler is only executed if rustyline is not active
             // this sends a SIGINT to all child processes (if any), terminating the worker for us
@@ -382,8 +402,11 @@ impl Shell {
             // value of 2 afterwards. If we don't want to catch ctrlcs anymore we set the ctr back to 1.
             // This is important so we can still terminate the process while we are reading input from stdin,
             // eg while waiting for input during `add domain`.
-            let prev = ctr.add_ctrlc();
+            let signal_register = signal_register_pair.0.lock().unwrap();
+            let prev = signal_register.add_ctrlc();
+            signal_register_pair.1.notify_all();
             if prev == 1 {
+                info!("Program will be exited because of twin-ctrlc");
                 ::std::process::exit(0);
             }
         })
@@ -391,8 +414,9 @@ impl Shell {
     }
 
     #[inline(always)]
-    pub fn signal_register(&self) -> &Arc<SignalRegister> {
-        &self.signal_register
+    pub fn signal_register(&self) -> SignalRegisterPair {
+        self.signal_register_pair.clone()
+        // (self.signal_register_pair.0, self.signal_register_pair.1)
     }
 
     // pub fn store_blob(&self, tx: VoidSender, blob: &Blob) {
@@ -402,6 +426,9 @@ impl Shell {
 }
 
 pub struct SignalRegister(AtomicUsize);
+
+pub type SignalRegisterPair = Arc<(Mutex<SignalRegister>, Condvar)>;
+// pub type SignalRegisterPairRef<'a> = (&'a Arc<Mutex<SignalRegister>>, Condvar);
 
 impl Default for SignalRegister {
     fn default() -> Self {
@@ -435,16 +462,19 @@ impl SignalRegister {
 pub fn print_banner() {
     println!(
         r#"
-                   ___/           .
-     ____ , __   .'  /\ ` , __   _/_
-    (     |'  `. |  / | | |'  `.  |
-    `--.  |    | |,'  | | |    |  |
-   \___.' /    | /`---' / /    |  \__/
+        {}
 
-        {} | {} | {}
-      {}
+        {}
 "#,
-        "osint", "recon", "security", "irc.hackint.org:6697/#sn0int"
+        r#"
+        oooo d8b  .ooooo.  oooo    ooo oooo d8b
+        `888""8P d88' `88b  `88.  .8'  `888""8P
+         888     888ooo888   `88..8'    888
+         888     888    .o    `888'     888
+        d888b    `Y8bod8P'     `8'     d888b
+"#
+        .red(),
+        "Reverse shell handler".red()
     );
 }
 
@@ -455,7 +485,7 @@ async fn cmd<T: Cmd>(rl: &mut Shell, args: &[String]) -> Result<()> {
 
 pub async fn run_once(rl: &mut Shell) -> Result<bool> {
     let line = rl.readline();
-    debug!("Received line: {:?}", line);
+    // debug!("Received line: {:?}", line);
     match line {
         Some((Command::Listen, args)) => cmd::<listen_cmd::Args>(rl, &args).await?,
         Some((Command::Sessions, args)) => cmd::<sessions_cmd::Args>(rl, &args).await?,
@@ -490,9 +520,13 @@ pub async fn run_once(rl: &mut Shell) -> Result<bool> {
         // Some((Command::Quickstart, args)) => quickstart_cmd::run(rl, &args)?,
         // Some((Command::Workspace, args)) => cmd::<workspace_cmd::Args>(rl, &args)?,
         // Some((Command::Cal, args)) => cmd::<cal_cmd::Args>(rl, &args)?,
-        Some((Command::Exit, _)) => return Ok(true),
+        Some((Command::Exit, _)) => {
+            if rl.exit_confirm().context("Failed to get exit-confirm.")? {
+                return Ok(true);
+            }
+        }
         Some((Command::Quit, _)) => return Ok(true),
-        Some((Command::Interrupt, _)) => return Ok(true),
+        Some((Command::Interrupt, _)) => return Ok(false),
         // Some((Command::Exec(cmd), _)) => {
         //     shell_exec(&cmd, rl.workspace())?;
         // }
@@ -587,7 +621,7 @@ pub async fn run() -> Result<()> {
             Err(err) => {
                 error!("{}", &err.to_string());
                 for cause in err.chain().skip(1) {
-                    eprintln!("because: {}", cause);
+                    eprintln!("\tBecause: {}", cause);
                 }
             }
         }

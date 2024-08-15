@@ -1,9 +1,7 @@
 use anyhow::{anyhow, bail, Result};
-use log::info;
+use log::debug;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
-use std::thread;
-use std::time::Duration;
 use std::{
     io::{self, BufReader, Read, Write},
     net::TcpStream,
@@ -37,6 +35,7 @@ async fn stdout_stream_pipe(
         loop {
             select! {
                 _ = pause_recver.changed() => {
+                    debug!("received ^D signal to pause in stream-stdout-pipe from stdin-stream-pipe");
                     return Ok(ShellMessage::Paused);
                 }
 
@@ -116,8 +115,11 @@ async fn stdin_stream_pipe(
                         Ok(1) => {
                             let received_byte = received_bytes[0];
 
+                            debug!("received {}", received_byte);
+
                             if received_byte == exit_ctrl_char {
                                 pause_sender.send(())?;
+                                debug!("catched ^D in stdin-stream-pipe");
                                 return Ok(ShellMessage::Paused);
                             }
 

@@ -1,6 +1,6 @@
 use crate::errors::*;
 pub use rustyline::error::ReadlineError;
-use rustyline::{self, history::DefaultHistory, CompletionType, DefaultEditor, EditMode, Editor};
+use rustyline::{self, history::DefaultHistory, CompletionType, EditMode, Editor};
 use std::path::Path;
 
 pub struct Readline<T: rustyline::Helper> {
