@@ -42,7 +42,7 @@ pub enum Command {
     // Download,
     // Upload,
     // Back,
-    Sessions,
+    Remote,
 
     Help,
     Exit,
@@ -59,7 +59,7 @@ impl Command {
             // Command::Download => "download",
             // Command::Upload => "upload",
             Command::Listen => "listen",
-            Command::Sessions => "sessions",
+            Command::Remote => "remote",
             Command::Help => "help",
             Command::Exit => "exit",
             Command::Quit => "quit",
@@ -75,7 +75,7 @@ impl Command {
                 // Command::Download.as_str(),
                 // Command::Upload.as_str(),
                 Command::Listen.as_str(),
-                Command::Sessions.as_str(),
+                Command::Remote.as_str(),
                 Command::Help.as_str(),
                 Command::Exit.as_str(),
                 Command::Quit.as_str(),
@@ -95,7 +95,7 @@ impl FromStr for Command {
             // "download" => Ok(Command::Download),
             // "upload" => Ok(Command::Upload),
             "listen" => Ok(Command::Listen),
-            "sessions" => Ok(Command::Sessions),
+            "remote" => Ok(Command::Remote),
             "help" => Ok(Command::Help),
             "exit" => Ok(Command::Exit),
             "quit" => Ok(Command::Quit),
@@ -488,7 +488,7 @@ pub async fn run_once(rl: &mut Shell) -> Result<bool> {
     // debug!("Received line: {:?}", line);
     match line {
         Some((Command::Listen, args)) => cmd::<listen_cmd::Args>(rl, &args).await?,
-        Some((Command::Sessions, args)) => cmd::<sessions_cmd::Args>(rl, &args).await?,
+        Some((Command::Remote, args)) => cmd::<remote_cmd::Args>(rl, &args).await?,
 
         Some((Command::Help, args)) => help_cmd::run(rl, &args)?,
         // Some((Command::Activity, args)) => cmd::<activity_cmd::Args>(rl, &args)?,

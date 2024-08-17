@@ -9,7 +9,7 @@ fn help(name: &str, descr: &str) {
 
 pub fn run(_rl: &mut Shell, _args: &[String]) -> Result<()> {
     println!("\n\x1b[33mCOMMANDS:\x1b[0m");
-    help("sessions", "manages reverse shell sessions");
+    help("remote", "manages reverse shell sessions");
     help("listen", "starts waiting for reverse shell");
     help("help", "prints this message");
     println!("\nRun <command> -h for more help.\n");

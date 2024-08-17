@@ -21,6 +21,9 @@ async fn main() {
     let args = Args::parse();
     let ip = IpAddr::from_str(&args.ip).unwrap();
     spawn_shell_tunnel(ip, args.port).await;
+
+    // let addr = SocketAddr::new(ip, args.port);
+    // let tcp_stream = TcpStream::connect(addr).unwrap();
 }
 
 async fn spawn_shell_tunnel(ip: IpAddr, port: u16) {

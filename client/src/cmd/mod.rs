@@ -15,5 +15,5 @@ pub mod back_cmd;
 pub mod download_cmd;
 pub mod help_cmd;
 pub mod listen_cmd;
-pub mod sessions_cmd;
+pub mod remote_cmd;
 pub mod upload_cmd;
